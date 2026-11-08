@@ -1,0 +1,31 @@
+# 编辑加工技能备份
+
+这是 Claude Code 的个人技能目录（`~/.claude/skills`）的备份，私有仓库。
+
+## 内容
+
+| 技能 | 作用 |
+|---|---|
+| `editorial-term-consistency-review` | 书稿一致性审查（正式版）：逐章精读建名词表，查名称、数量、结构、数据、图文的前后不一致。2026-11-08 改版，旧版在 `legacy/` |
+| `editorial-term-consistency-review-test` | 一致性审查 test 版（Decisions 对比试验），平时不用 |
+| `tongdu` | 通读：标点、错别字、病句、图表编号等直接改成修订，知识性疑点只批注 |
+| `formula-proofread` | 公式审校：字形（正斜体、黑白体）与数学正确性 |
+| `editorial-processing` | 编辑加工辅助脚本 |
+
+## 恢复
+
+换电脑或误删后，一条命令恢复（目录不存在时）：
+
+```bash
+git clone https://github.com/ywt19981998/editing-skills.git ~/.claude/skills
+```
+
+目录已存在时，先把旧目录移走再克隆，或在目录内 `git pull`。
+
+## 需要注意
+
+- 脚本需要 `lxml`：系统默认的 `python3` 没有，用 `/usr/bin/python3` 或 `~/.venvs/book-review/bin/python`。
+- 改完技能后检查每个 `SKILL.md` 的首行是 `---`。
+- 每次修改提交一次，再 `git push` 同步到这里。
+- 密钥不在仓库里：OpenAI、Anthropic 的密钥放在 macOS 钥匙串（服务名 `bianjia-openai-decisions`、`bianjia-anthropic-api`）。
+- Codex 那份副本在 `~/.codex/skills/`，不在本仓库。
