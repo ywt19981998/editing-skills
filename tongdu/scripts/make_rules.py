@@ -6,13 +6,14 @@
 #   只批注：  {"P": "P24", "target": "垂直风切变", "text": "【请作者核实】……", "cat": "知识性疑点"}
 #   可选字段：nth（本段第几个，从 0 起，同段同一文字出现多次时用）
 #   可选字段：whole（true 时修订显示为整词整值替换，用于数值、专有名词、编号，如 GÉANT→Geant、9.56e-07→9.56×10⁻⁷）
-# 有 note 的修改会在同一位置加一条“【说明】+note”批注；同类机械修改只在第一处写 note。
+# 2026-11-08 起默认不出【说明】批注（编辑：直接改的看修订就够了）；note 只留在通读发现.json 和判断记录里。
+# 加 --with-notes 才在同一位置加“【说明】+note”批注（旧做法）。
 import sys, json, zipfile, re, argparse
 from lxml import etree
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 q = lambda t: f'{{{W}}}{t}'
 ap = argparse.ArgumentParser()
-ap.add_argument('base'); ap.add_argument('findings'); ap.add_argument('out'); ap.add_argument('--avoid')
+ap.add_argument('base'); ap.add_argument('findings'); ap.add_argument('out'); ap.add_argument('--avoid'); ap.add_argument('--with-notes', action='store_true')
 a = ap.parse_args()
 
 doc = etree.fromstring(zipfile.ZipFile(a.base).read('word/document.xml'))
@@ -56,7 +57,7 @@ for i, f in enumerate(json.load(open(a.findings, encoding='utf-8')), 1):
         if not c: errs.append(f'{tag}：段内找不到这段原文，或找不到不与一致性修订重叠的唯一定位'); continue
         edits.append(dict(ctx=c, old=f['old'], new=f['new'], category=f.get('cat', ''), source='通读', P=f['P']))
         if f.get('whole'): edits[-1]['whole'] = True
-        if f.get('note'):
+        if f.get('note') and a.with_notes:
             comments.append(dict(ctx=c, target=f['old'], text='【说明】' + f['note'], category=f.get('cat', ''), source='通读', P=f['P']))
     else:
         c = locate(f['P'], f['target'], f.get('nth', 0))
