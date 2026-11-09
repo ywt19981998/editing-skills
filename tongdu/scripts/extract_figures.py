@@ -1,6 +1,6 @@
 # 导出本章图片，供逐张看图内文字（错别字、单位写法）：只读底稿，不改稿子
 # 用法: extract_figures.py 底稿.docx 输出目录 [--from P233] [--to P288]
-# 输出: 输出目录/图片/*.png、figures.md（段号、图题、文件名）；公式小图跳过，EMF/WMF 转不了的列出来，要看排版页面
+# 输出: 输出目录/图片/*.png、figures.md（段号、图题、文件名）；公式小图跳过，EMF/WMF 转不了的、Word 原生图表导不出的列出来，要看排版页面；透明底垫白
 import sys, os, re, io, zipfile, posixpath
 from hashlib import md5
 from lxml import etree
@@ -47,11 +47,15 @@ def caption(i):
     return ''
 
 seen, rows, skipped, failed, same, first = set(), [], 0, [], [], {}
+charts = []
 for i, p in enumerate(plist):
     P = plabel.get(p, 0)
     if (p_from and P < p_from) or (p_to and P > p_to): continue
     for draw in list(p.iter(q('drawing'))) + list(p.iter(q('pict'))):
         ext = next(draw.iter(f'{{{WP}}}extent'), None)
+        gd = next(draw.iter(f'{{{A}}}graphicData'), None)
+        if gd is not None and 'chart' in (gd.get('uri') or ''):   # Word 原生图表（柱状图等）不是图片，导不出，单列提示
+            charts.append((P, caption(i))); continue
         if ext is not None and min(int(ext.get('cx')), int(ext.get('cy'))) < MIN_EMU: skipped += 1; continue
         ids = [b.get(f'{{{R}}}embed') for b in draw.iter(f'{{{A}}}blip')] + [v.get(f'{{{R}}}id') for v in draw.iter(f'{{{V}}}imagedata')]
         for rid in filter(None, ids):
@@ -64,7 +68,11 @@ for i, p in enumerate(plist):
                 same.append((P, first[h])); continue
             first[h] = P
             try:
-                im = Image.open(io.BytesIO(zf.read(path))).convert('RGB')
+                im = Image.open(io.BytesIO(zf.read(path)))
+                if im.mode in ('RGBA', 'LA', 'P') or 'transparency' in im.info:   # 透明底垫白，免得转 RGB 后变黑、黑字看不见
+                    im = im.convert('RGBA'); bg = Image.new('RGBA', im.size, (255, 255, 255, 255))
+                    bg.alpha_composite(im); im = bg
+                im = im.convert('RGB')
                 im.thumbnail((MAX_SIDE, MAX_SIDE))
                 name = f'P{P}-{k}.png'
                 im.save(os.path.join(out, '图片', name))
@@ -77,6 +85,8 @@ with open(os.path.join(out, 'figures.md'), 'w', encoding='utf-8') as f:
     f.write('| 段 | 图题 | 文件 |\n|---|---|---|\n' + ''.join(f'| P{P} | {c} | 图片/{n_} |\n' for P, c, n_ in rows))
     if same:
         f.write('\n## 同一张图重复插入（请核对）\n\n' + ''.join(f'- P{P} 与 P{a} 完全相同\n' for P, a in same))
+    if charts:
+        f.write('\n## Word 原生图表（导不出：看排版页面，数据在 word/charts/chartN.xml）\n\n' + ''.join(f'- P{P} {c}\n' for P, c in charts))
     if failed:
         f.write('\n## 转不了（要看排版页面）\n\n' + ''.join(f'- P{P} {c}：{n_}\n' for P, c, n_ in failed))
-print(f'导出 {len(rows)} 张，跳过小图 {skipped} 张，重复 {len(same)} 张，转不了 {len(failed)} 张 → {out}')
+print(f'导出 {len(rows)} 张，跳过小图 {skipped} 张，重复 {len(same)} 张，转不了 {len(failed)} 张，原生图表 {len(charts)} 个 → {out}')
