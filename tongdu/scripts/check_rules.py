@@ -4,7 +4,9 @@
 # 按 revise_docx 的顺序模拟：先放全部批注（看原文），再逐条修订（前一条改过的字后一条就看不到了）
 # 有错误时退出码为 1，不写合并文件
 # 带 "part": "footnote" 的规则在脚注里查
-import sys, json, zipfile
+# 批注查重：同一段里两条非【说明】批注引到同一个外文词、引号原文或三位以上数字，算疑似重复，报错；
+#   确是两件事的，在要保留的那条批注上加 "dup_ok": true
+import sys, json, zipfile, re
 from lxml import etree
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
 def q(t): return f'{{{W}}}{t}'
@@ -52,6 +54,29 @@ for f, spec in specs:
         if sum(t.count(c['ctx']) for t in F) > 1: warns.append(f'{tag}：ctx 不唯一，批注会落在第一处')
         if c['target'] not in F[hits[0]]: errs.append(f'{tag}：target「{c["target"][:16]}」不在该段')
         if not c['text'].startswith(TAGS): warns.append(f'{tag}：批注没有以【明确问题】【待确认】【请作者核实】【请作者提供出处】【说明】开头')
+# 批注查重（一致性、通读各报一条同一处问题时最常见）
+GENERIC = re.compile(r'^(图|表|式|算法)?\d+[-.．]\d+$|^\d+(\.\d+)*节$')
+def keys(text):
+    ks = set(re.findall(r'[A-Za-z][A-Za-z0-9\-]{1,}', text)) | set(re.findall(r'\d{3,}', text))
+    ks |= {x for x in re.findall(r'“([^”]{2,})”', text)}
+    return {k for k in ks if not GENERIC.match(k)}
+bypara = {}
+for f, spec in specs:
+    for i, c in enumerate(spec.get('comments', [])):
+        if c['text'].startswith('【说明】') or c.get('dup_ok'): continue
+        F, _, where = pick(c)
+        hits = [k for k, t in enumerate(F) if c['ctx'] in t]
+        if hits: bypara.setdefault((where, hits[0]), []).append((f, i, c))
+for (where, k), cs in bypara.items():
+    for x in range(len(cs)):
+        for y in range(x + 1, len(cs)):
+            (f1, i1, c1), (f2, i2, c2) = cs[x], cs[y]
+            share = keys(c1['text']) & keys(c2['text'])
+            if share:
+                errs.append(f'疑似重复批注（{where}P{plabel.get(ps[k], "?") if not where else k + 1}，共同引到 {"、".join(sorted(share)[:4])}）：\n'
+                            f'    {f1} comment#{i1 + 1}：{c1["text"][:40]}\n    {f2} comment#{i2 + 1}：{c2["text"][:40]}\n'
+                            f'    → 删去一条（留更具体的）；确是两件事就在要留的那条加 "dup_ok": true')
+
 for f, spec in specs:
     for i, e in enumerate(spec.get('edits', [])):
         F, D, where = pick(e)
