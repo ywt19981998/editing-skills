@@ -60,8 +60,8 @@
    - **批注要短**：一句话、60字以内（标签不计），写“错在哪＋依据或改法”；不写网址、不写查过哪些地方、不复述原文、不写推理过程（这些写进审查记录或判断记录）。
    - **每个出现位置各一条**：同一问题涉及 N 处，就写 N 条 edit 或 comment，每处都能在 Word 里看到标记；不能只在第一处加批注、其余位置只在批注文字里提一句。
    - 译名、术语有国家规范名称（如全国科学技术名词审定委员会公布名）且各处指同一对象时，按规范名称直接写 edit，不写成待确认。
-   主代理会用 `scripts/revise_docx.py` 把它写进 Word 副本，你不要直接改 Word。
-   写完后用 `~/.venvs/book-review/bin/python ~/.claude/skills/editorial-term-consistency-review/scripts/runs.py <原稿docx> <各条 old>` 自检，每条 edit 的 `old` 都要落在单个 run 内（“单run命中”非空）。不在单个 run 内时，把 `old` 缩短为只含需要改动的那几个字及其相邻的字（如章题只取“新能源预测”），批注不受此限。
+   主代理会用 `scripts/revise_docx.py` 把它写进 Word 副本，你不要直接改 Word，也不用自己试写。
+   写完后预检：`~/.venvs/book-review/bin/python ~/.claude/skills/tongdu/scripts/check_rules.py <原稿docx> <工作目录>/第<NN>章-机械规则.json <工作目录>/第<NN>章-修订规则.json`（没有机械规则就只给修订规则），错误须为 0，“提醒”逐条看是否在预期内。预检通过即可交活。`old` 跨不跨 run 都能写入，不用为此缩短；规则各键的含义和落位顺序见模板文件“第NN章-修订规则.json”一节，不用去读脚本源码。
 6. 文件中只写依据原文；没有核对过的内容不写“一致”或“无问题”。
 
 **返回给主代理的内容（不超过 15 行，不要贴整章内容）：**

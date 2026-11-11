@@ -6,7 +6,7 @@
 
 | 技能 | 作用 |
 |---|---|
-| `editorial-term-consistency-review` | 书稿一致性审查（正式版）：逐章精读建名词表，查名称、数量、结构、数据、图文的前后不一致。2026-11-08 改版，旧版在 `legacy/` |
+| `editorial-term-consistency-review` | 书稿一致性审查（正式版）：逐章精读建名词表，查名称、数量、结构、数据、图文的前后不一致。2026-11-08 改版；改版前的旧版可从 git 提交 `e593250` 取回（该提交里的 `legacy/` 目录） |
 | `editorial-term-consistency-review-test` | 一致性审查 test 版（Decisions 对比试验），平时不用 |
 | `tongdu` | 通读：标点、错别字、病句、图表编号等直接改成修订，知识性疑点只批注 |
 | `formula-proofread` | 公式审校：字形（正斜体、黑白体）与数学正确性 |
