@@ -17,7 +17,9 @@ ap.add_argument('--whole', action='store_true'); ap.add_argument('--only', defau
 a = ap.parse_args()
 book = os.path.abspath(a.book); n = int(a.chapter); NN = f'{n:02d}'
 cfg = json.load(open(os.path.join(book, '本书配置.json'), encoding='utf-8'))
-src = (cfg.get('原稿覆盖') or {}).get(NN) or cfg['原稿'].replace('{n}', str(n)).replace('{NN}', NN)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from book_src import chapter_src
+src = chapter_src(cfg, book, n)[0]
 txt = open(os.path.join(book, 'source', f'第{NN}章-docx段落.txt'), encoding='utf-8').read()
 paras = [(m.group(1), re.sub(r'\[批注\d+>|<批注\d+\]', '', m.group(2))) for m in re.finditer(r'^([PT]\d+): (.*)$', txt, flags=re.M)]
 ref = next((int(k[1:]) for k, v in paras if v.strip() in ('参考文献', '本章参考文献')), None)

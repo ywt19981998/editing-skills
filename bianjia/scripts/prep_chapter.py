@@ -32,9 +32,18 @@ def run(cmd, **kw):
 def fill(s): return s.replace('{n}', str(n)).replace('{NN}', NN)
 
 # ---------- 0 原稿 ----------
-src = (cfg.get('原稿覆盖') or {}).get(NN) or fill(cfg['原稿'])
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from book_src import chapter_src
+src, author_src, polish_dir = chapter_src(cfg, book, n)      # 润色过的章，底稿是润色后底稿
 if not os.path.exists(src):
     sys.exit(f'停：找不到原稿 {src}')
+if polish_dir:
+    info.append(f'底稿是润色后底稿（`{os.path.relpath(src, book)}`），作者原稿 `{author_src}`；一致性、通读都在润色后底稿上做，合并时脚本会把润色改动补标回去')
+    hand = os.path.join(polish_dir, '复查汇总.md')
+    if os.path.exists(hand) and '留给一致性审查的名词' in open(hand, encoding='utf-8').read():
+        todo.append(f'润色留下了“留给一致性审查的名词”（`{os.path.relpath(hand, book)}`）：派 A 一致性时写进派单，当变体候选的线索。')
+else:
+    todo.append('这一章还没有润色（没找到润色后底稿）。完整流程第一步是润色（技能 runse）；编辑说这一章不润色的，要告诉编辑：通读不查句子和标点，这两样就没人查了。')
 ch = (cfg.get('章') or {}).get(str(n)) or (cfg.get('章') or {}).get(NN) or {}
 
 # ---------- 1 段落文字 ----------

@@ -3,7 +3,7 @@
 
 三段，按顺序各跑各的（前一段没过不会进下一段）：
   rules    门禁 → 拼避让 → 通读发现转规则 → 预检并合并 → 写入 Word（s1.docx）
-  style    出稿后脚本（配置“出稿后”）→ 合并稿 → 重复批注清单、改动句复读清单、统计
+  style    出稿后脚本（配置“出稿后”）→ 润色过的章把润色改动补标回去并核对 → 合并稿 → 重复批注清单、改动句复读清单、统计
   deliver  查锁文件、查用户有没有改过 → 旧版移废纸篓 → 放进交付目录 → 记指纹
 
 用法: merge_chapter.py <书的工作目录> <章号> [rules|style|deliver|all] [选项]
@@ -18,6 +18,10 @@
   合并/通读规则.json     通读规则（删掉与 A 重复的条目）
   合并/通读补-手写.json  通读与 A 改到同一处时，手写的合并改法
 要在 s1.docx 上手工补修订的（如段首插“其中，”），存成 合并/s1b.docx，style 段会接着它做。
+
+润色过的章（书目录下有 润色/第NN章/第NN章-润色后底稿.docx、正文.txt、终稿.json）：规则是写在润色后底稿上的，
+style 段最后用润色技能的 remark_polish.py 把润色改动补标回去，合并稿就是唯一的一份修订稿——
+拒绝全部修订等于作者原稿，接受全部修订等于定稿（verify_remark.py 核对，不过就停）。没补标的那份留作 合并/第NN章合并稿-补标前.docx。
 """
 import sys, os, re, json, shutil, subprocess, argparse, hashlib, datetime, difflib, zipfile, collections
 
@@ -25,6 +29,9 @@ PY = os.path.expanduser('~/.venvs/book-review/bin/python')
 S1 = os.path.expanduser('~/.claude/skills/editorial-term-consistency-review/scripts')
 S2 = os.path.expanduser('~/.claude/skills/tongdu/scripts')
 S3 = os.path.dirname(os.path.abspath(__file__))
+S4 = os.path.expanduser('~/.claude/skills/runse/scripts')
+sys.path.insert(0, S3)
+from book_src import chapter_src
 
 ap = argparse.ArgumentParser()
 ap.add_argument('book'); ap.add_argument('chapter'); ap.add_argument('stage', nargs='?', default='all', choices=['rules', 'style', 'deliver', 'all'])
@@ -34,7 +41,7 @@ a = ap.parse_args()
 book = os.path.abspath(a.book); n = int(a.chapter); NN = f'{n:02d}'
 cfg = json.load(open(os.path.join(book, '本书配置.json'), encoding='utf-8'))
 fill = lambda s: s.replace('{n}', str(n)).replace('{NN}', NN)
-src = (cfg.get('原稿覆盖') or {}).get(NN) or fill(cfg['原稿'])
+src, author_src, polish_dir = chapter_src(cfg, book, n)      # 润色过的章：src 是润色后底稿，author_src 是作者原稿
 M = os.path.join(book, fill(cfg.get('合并目录', '通读/第{NN}章/合并'))); os.makedirs(M, exist_ok=True)
 B = lambda name: os.path.join(book, name)
 Mf = lambda name: os.path.join(M, name)
@@ -57,7 +64,7 @@ final = Mf(f'第{NN}章合并稿.docx')
 
 # =====================================================================
 def stage_rules():
-    print(f'【rules】第{NN}章')
+    print(f'【rules】第{NN}章' + ('（底稿：润色后底稿）' if polish_dir else ''))
     for p, what in ((src, '原稿'), (f_A, 'A 一致性规则'), (f_find, '通读发现')):
         if not os.path.exists(p): stop(f'缺{what}：{p}')
     # 1 门禁
@@ -167,11 +174,28 @@ def stage_style():
         print(f'  删重复批注 {drop}：' + (o.strip().splitlines() or [''])[-1][:80])
     else:
         shutil.copy(cur, final)
+    # 补标：把润色改动标回去，合成一份
+    remark_note = ''
+    if polish_dir:
+        before = Mf(f'第{NN}章合并稿-补标前.docx'); shutil.move(final, before)
+        res_f, txt_f, terms_f = os.path.join(polish_dir, '终稿.json'), os.path.join(polish_dir, '正文.txt'), os.path.join(polish_dir, '术语表.txt')
+        c, o = run([PY, f'{S4}/remark_polish.py', author_src, before, final, txt_f, res_f] + (['--terms', terms_f] if os.path.exists(terms_f) else []))
+        if c or not os.path.exists(final): stop('补标（把润色改动标回合并稿）失败：\n' + o[-900:] + f'\n  没补标的那份在 {before}。')
+        lines = [l for l in o.strip().splitlines() if not l.startswith('→')]
+        for l in lines: print('  ' + l[:160])
+        c, o2 = run([PY, f'{S4}/verify_remark.py', author_src, before, final])
+        if c:
+            os.replace(final, Mf(f'第{NN}章合并稿-补标没过.docx'))
+            stop('补标后的核对没过，合并稿没有生成（出问题的那份改名为“合并稿-补标没过”）：\n' + o2[-900:])
+        print('  补标核对：拒绝全部修订＝作者原稿，接受全部修订＝定稿，问题无')
+        remark_note = '；'.join(lines)
     # 统计
     z = zipfile.ZipFile(final); x = z.read('word/document.xml').decode('utf-8', 'ignore')
     cm = z.read('word/comments.xml').decode('utf-8', 'ignore') if 'word/comments.xml' in z.namelist() else ''
     authors = collections.Counter(re.findall(r'<w:comment [^>]*w:author="([^"]*)"', cm))
     stat = f'插入 {len(re.findall("<w:ins ", x))}、删除 {len(re.findall("<w:del ", x))}、格式修订 {len(re.findall("<w:pPrChange ", x))}；批注 {sum(authors.values())} 条（' + '、'.join(f'{k} {v}' for k, v in authors.items()) + '）'
+    by = collections.Counter(re.findall(r'<w:(?:ins|del) [^>]*w:author="([^"]*)"', x))
+    if len(by) > 1: stat += '；各修订人：' + '、'.join(f'{k} {v}' for k, v in by.most_common())
     # 重复批注
     c, dup = run([PY, f'{S3}/dupcom.py', final])
     ndup = int((re.search(r'多批注段 (\d+)', dup) or [0, 0])[1])
@@ -188,11 +212,12 @@ def stage_style():
         for j in range(j1, j2):
             o_ = old[i1 + (j - j1)] if tag == 'replace' and i1 + (j - j1) < i2 else ''
             ch.append(new[j] + (('\n  > 原：' + o_) if o_ and len(o_) <= 40 else ''))
-    L = [f'# 第{NN}章 改动句复读（{len(ch)} 段有改动）', '', '下面是接受全部修订后的样子（标题附原文）。读一遍：句子通不通、有没有改重了、改半截、前后句接不上。要看某段的修订痕迹，在 final.txt 里搜。', ''] + [f'{i}. {c_}\n' for i, c_ in enumerate(ch, 1)]
+    L = [f'# 第{NN}章 改动句复读（{len(ch)} 段有改动）', '', '下面是接受全部修订后的样子（标题附原文）。读一遍：句子通不通、有没有改重了、改半截、前后句接不上。要看某段的修订痕迹，在 final.txt 里搜。', '']
+    if polish_dir: L[2:2] = ['', '这一章润色过：这里只列润色之后（一致性、通读）又动过的段。润色时句子已经顺过一遍，后两遍在上面改词、删主语最容易把句子改别扭，而通读不再查句子——这份复读是唯一一道，每段都要读。'] + [f'{i}. {c_}\n' for i, c_ in enumerate(ch, 1)]
     open(Mf('改动句复读.md'), 'w', encoding='utf-8').write('\n'.join(L))
     rep = [f'# 第{NN}章 合并报告（{datetime.datetime.now():%m-%d %H:%M}）', '', f'- 合并稿：`{final}`', f'- {stat}',
            f'- 改动 {len(ch)} 段 → `改动句复读.md`（要读）', f'- 同段多条批注 {ndup} 段' + ('（看下面有没有重复，重复的用 --drop-comments 编号 重跑 style）' if ndup else ''),
-           '- 没跑的出稿后脚本：' + ('；'.join(skipped) if skipped else '无'), '', '## 同段多条批注', '', '```', dup.strip(), '```', '']
+           '- 没跑的出稿后脚本：' + ('；'.join(skipped) if skipped else '无')] + ([f'- 润色补标：{remark_note}', f'- 核对：拒绝全部修订＝作者原稿（`{author_src}`），接受全部修订＝定稿；没补标的那份是 `第{NN}章合并稿-补标前.docx`'] if polish_dir else []) + ['', '## 同段多条批注', '', '```', dup.strip(), '```', '']
     open(Mf('合并报告.md'), 'w', encoding='utf-8').write('\n'.join(rep))
     print(f'  {stat}')
     print(f'  改动 {len(ch)} 段 → 改动句复读.md；同段多条批注 {ndup} 段 → 合并报告.md')
