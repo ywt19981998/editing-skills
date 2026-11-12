@@ -1,5 +1,6 @@
 # 错别字、重复字词、易混词、标点、量和单位、数字用法、英文的本地初筛：只出候选，交 AI 逐条判断
-# 用法: scan_typos.py 书稿.docx 输出目录 [--from P233] [--to P288] [--words 易错词表.md] [--units space|nospace|off]
+# 用法: scan_typos.py 书稿.docx 输出目录 [--from P233] [--to P288] [--words 易错词表.md] [--units space|nospace|off] [--with-punct]
+#   --with-punct：连标点、括号引号配对、公式残句的候选也出。默认不出：句子和标点归润色技能（2026-11-12 编辑定）
 #   --units：本书数值与单位之间的体例。space（国标，默认）报不空格的；nospace 报空了格的；off 不查
 # 输出: 输出目录/typo-candidates.json（候选问题，带全文唯一 ctx）、typo-report.md（按类列表，给人看）
 import sys, os, re, json, zipfile, logging
@@ -20,6 +21,8 @@ def opt(name, default=None):
 p_from, p_to = opt('--from'), opt('--to')
 words_md = opt('--words', os.path.join(HERE, '..', 'references', '易错词表.md'))
 units_style = opt('--units', 'space')
+WITH_PUNCT = '--with-punct' in args
+if WITH_PUNCT: args.remove('--with-punct')
 src, outdir = args[0], args[1]
 pnum = lambda s: int(s.lstrip('PpTt')) if s else None
 p_from, p_to = pnum(p_from), pnum(p_to)
@@ -96,6 +99,7 @@ for sec, rows in tabs.items():
 # ---------- 候选 ----------
 cands = []
 def add(pi, k, old, typ, rule, hint, new=None):
+    if not WITH_PUNCT and typ in ('标点', '配对', '病句'): return      # 句子和标点归润色，通读不判断这几类候选
     ctx = make_ctx(pi, k, old)
     t = ALL[pi]
     cands.append(dict(type=typ, rule=rule, para=f"P{paras[pi]['P']}", old=old, new=new, hint=hint, ctx=ctx,
