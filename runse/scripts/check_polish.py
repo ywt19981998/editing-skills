@@ -78,7 +78,7 @@ def punct_lint(s):
     for x, y in (('（', '）'), ('“', '”'), ('《', '》'), ('(', ')'), ('[', ']')):
         if t.count(x) != t.count(y): p.append(f'{x}{y}不成对')
     if t and t[-1] not in '。！？：；…”）)': p.append('段末没有标点')
-    if re.search(r'、[^，。；：]{0,12}、[^，。；：]{0,30}(?<!，)以及', t): p.append('“以及”前缺逗号（疑似）')
+    if re.search(r'、[^，。；：、]{0,30}(?<!，)以及', t): p.append('“以及”前缺逗号（疑似）')
     return p
 def toks(s): return [w for w in jieba.cut(s, HMM=False) if w]
 def inline_diff(old, new, fmt):
@@ -90,6 +90,25 @@ def inline_diff(old, new, fmt):
             if x: out.append(fmt('-', x))
             if y: out.append(fmt('+', y))
     return ''.join(out)
+# 书面语的词 → 口语里的近义词：润色不该这样换（2026-11-12 编辑定：学术著作用书面语）
+COLLOQ = [('存在', '有'), ('具有', '有'), ('包含', '有'), ('均', '都'), ('仅', '只'), ('于', '在'), ('首先', '先'), ('获得', '得到'),
+          ('尚未', '没有'), ('尚未', '还没'), ('尚', '还'), ('自身', '自己'), ('如何', '怎么'), ('是否', '是不是'), ('无法', '没法'),
+          ('用于', '用来'), ('用以', '用来'), ('使', '让'), ('使得', '让'), ('将', '把'), ('此', '这'), ('即', '就是'), ('因而', '所以')]
+ORAL = ['这样做', '是为了', '自己', '用来', '拿来', '没法', '怎么', '是不是', '就是说', '好几', '的话，']   # 润色稿里新出现就提示
+HAN_ONLY = re.compile(r'^[一-鿿]+$')
+def word_swaps(old, new):
+    """按词对比，返回（书面换口语的词对，一词换一词的词对，新出现的口头说法）"""
+    ta, tb = toks(strip_ph(old)), toks(strip_ph(new)); colloq, swaps = [], []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, ta, tb, autojunk=False).get_opcodes():
+        if op != 'replace': continue
+        x, y = ''.join(ta[i1:i2]), ''.join(tb[j1:j2])
+        if len(x) > 6 or len(y) > 6: continue
+        hit = [(a, b) for a, b in COLLOQ if a in x and a not in y and b in y]
+        if hit: colloq += [f'{a}→{b}' for a, b in hit]
+        elif i2 - i1 == 1 and j2 - j1 == 1 and len(x) >= 2 and len(y) >= 2 and HAN_ONLY.match(x) and HAN_ONLY.match(y): swaps.append((x, y))
+    oral = [w for w in ORAL if w in strip_ph(new) and w not in strip_ph(old)]
+    oral += [w for w in ('让', '拿') if w in tb and w not in ta]          # 单字的按词算，免得“转让”“拿捏”误报
+    return colloq, swaps, oral
 md_fmt = lambda k, s: s if k == '=' else ('[-' + s + '-]' if k == '-' else '{+' + s + '+}')
 html_fmt = lambda k, s: html.escape(s) if k == '=' else (f'<del>{html.escape(s)}</del>' if k == '-' else f'<ins>{html.escape(s)}</ins>')
 
@@ -98,6 +117,7 @@ changed = []
 for S in body:
     it = res.get(S)
     if it and it.get('changed') and (it.get('new') or '').strip() and it['new'].strip() != text_of[S].strip(): changed.append(S)
+final_all = ''.join(strip_ph(res[S]['new'] if S in set(changed) else text_of[S]) for S in body)   # 润色后的全文，数一个词别处还用不用
 hard = collections.defaultdict(list)      # 段号 → 硬问题
 soft = collections.defaultdict(list)      # 段号 → 线索
 term_rows, noun_rows = [], []
@@ -132,6 +152,11 @@ for S in changed:
     if gone or come:
         noun_rows.append((S, gone, come))
         soft[S].append('名词（分词粗查）：' + '；'.join(filter(None, [f'消失 {"、".join(gone)}' if gone else '', f'新出现 {"、".join(come)}' if come else ''])))
+    colloq, swaps, oral = word_swaps(old, new)
+    if colloq or oral:
+        soft[S].append('书面语换成了口语（要改回书面说法）：' + '、'.join(colloq + [f'新出现“{w}”' for w in oral]))
+    if swaps:
+        soft[S].append('一词换一词（可换可不换的就恢复原词）：' + '、'.join(f'{x}→{y}' + (f'（别处仍用“{x}”{final_all.count(x)} 处）' if final_all.count(x) else '') for x, y in swaps))
     lo_, ln_ = punct_lint(old), punct_lint(new)
     if ln_: soft[S].append('标点疑点：' + '、'.join(ln_))
     a_, b_ = strip_ph(old), strip_ph(new)
