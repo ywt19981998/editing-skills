@@ -78,10 +78,12 @@ def pairs(occ):
         for a in range(len(gs)):
             for b in range(a + 1, len(gs)):
                 x, y = gs[a], gs[b]
-                # 末尾两字都须是词典里的词（排除“模型的不/模型的局”这类半截），且一方是少数写法
+                # 末尾两字都须是词典里的词（排除“模型的不/模型的局”这类半截）
+                # 不再要求一方是少数写法（≤2处）：两种都常用的（异常信号5处/异常信息7处）更该比，
+                # 放开后每章只多0～2对（第13、15、16、17章实测，11-15）
                 if not (jieba.dt.FREQ.get(x[-2:]) and jieba.dt.FREQ.get(y[-2:])): continue
                 nx, ny = len(occ[x]), len(occ[y])
-                if min(nx, ny) > 2 or nx + ny < 3: continue
+                if nx + ny < 3: continue
                 found[(x, y)] = '末字换字'
     # 增删：长串删去一个内部字后等于短串
     for g in occ:
